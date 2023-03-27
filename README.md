@@ -4,20 +4,36 @@ This is basically malebuffy's Kobra Kai firmware forked to run in the Anycubic K
 Features:
 
 From jojos38:
+
 -Replace booting music with a single bip
+
 -Faster auto leveling
+
 -Faster homing
+
 -Slightly faster printing when using default printer settings
+
 -Slightly faster booting speed
+
 -Reduced noise (motherboard fan)
+
 (No linear Advance and rolled back mods to make it work)
 
+
+
 From Malebuffy:
+
 -Added G-Code Preview function
+
 -Cura Post-Script (lowered resolution to 10% as 30% was making it crush)
+
 -Cobra Kai UI
+
 -Z offset babysteps at 0.01
+
 -M117 Enabled for comments (Layer height etc)
+
+
 
 https://github.com/jojos38/anycubic-kobra-improved-firmware
 
