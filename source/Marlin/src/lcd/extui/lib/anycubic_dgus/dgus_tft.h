@@ -1,4 +1,4 @@
-/**
+	/**
  * Marlin 3D Printer Firmware
  * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
@@ -28,14 +28,16 @@
  * Written By Nick Wells, 2020 [https://github.com/SwiftNick]
  *  (not affiliated with Anycubic, Ltd.)
  */
+ 
+ 
 
 #include "dgus_tft_defs.h"
 #include "../../../../inc/MarlinConfigPre.h"
 #include "../../ui_api.h"
 
-#define DEVICE_NAME             "Anycubic Kobra"
-#define FIRMWARE_VER            "Kobra V2.8.2"
-#define BUILD_VOLUME            "220*220*250 (mm)"
+#define DEVICE_NAME             "Anycubic Kobra Max"
+#define FIRMWARE_VER            "Kobra Max V2.8.7"
+#define BUILD_VOLUME            "400*400*450 (mm)"
 #define TECH_SUPPORT            "https://www.anycubic.com"
 
 /****************** PAGE INDEX***********************/
@@ -59,6 +61,7 @@
 #define PAGE_LEVEL_ADVANCE (17+PAGE_OFFSET)
 #define PAGE_PREHEAT       (18+PAGE_OFFSET)
 #define PAGE_FILAMENT      (19+PAGE_OFFSET)
+#define PAGE_PREVIEW       (88+PAGE_OFFSET)
 
 #define PAGE_DONE           (20+PAGE_OFFSET)
 #define PAGE_ABNORMAL       (21+PAGE_OFFSET)
@@ -124,6 +127,14 @@
 #define PAGE_ENG_PROBE_PRECHECK_OK              (205+PAGE_OFFSET)
 #define PAGE_ENG_PROBE_PRECHECK_FAILED          (206+PAGE_OFFSET)
 
+#define PAGE_CHS_TOOL_CASELIGHT                 (207+PAGE_OFFSET)
+#define PAGE_ENG_TOOL_CASELIGHT                 (209+PAGE_OFFSET)
+
+#define PAGE_CHS_PRINTING_SETTING               (211+PAGE_OFFSET)
+#define PAGE_ENG_PRINTING_SETTING               (212+PAGE_OFFSET)
+
+
+
 /****************** Lcd control **************************/
 #define REG_LCD_READY        0x0014
 
@@ -147,15 +158,14 @@
 #define TXT_DISCRIBE_3      0x5090
 #define TXT_FILE_4          (0x2000+7*0x30)
 #define TXT_DISCRIBE_4       0x50C0
+#define ICO_FILE             0x7FFE
 
 // PRINT TXT
 #define TXT_PRINT_NAME          0x2000+8*0x30
 #define TXT_PRINT_SPEED         0x2000+9*0x30
 #define TXT_PRINT_TIME          0x2000+10*0x30
-#define TXT_PRINT_PROGRESS       0x2000+11*0x30
-//#define TXT_PRINT_HOTEND 		0x2000+12*0x30
-//#define TXT_PRINT_BED     		0x2000+13*0x30
-
+#define TXT_PRINT_PROGRESS      0x2000+11*0x30
+#define TXT_PRINT_COMMENT       0x2000+12*0x30
 
 // PRINT ADJUST TXT
 
@@ -207,7 +217,9 @@
 #define TXT_OUTAGE_RECOVERY_PROGRESS 0x2210
 #define TXT_OUTAGE_RECOVERY_FILE     0x2180
 
-
+//PREVIEW PAGE
+#define TXT_BASE64									 0x3020
+#define TXT_VAR_IMAGE 							 0x7FFE
 
 #define ADDRESS_SYSTEM_AUDIO     0x0080
 
@@ -237,7 +249,6 @@
 // FILE PAGE KEY
 
 #define KEY_FILE_TO_MAIN    1  
-#define KEY_PRINT           6
 #define KEY_RESUME          5
 #define KEY_PgUp            2
 #define KEY_pgDn            3
@@ -247,6 +258,11 @@
 #define KEY_FILE2			9
 #define KEY_FILE3			10
 #define KEY_FILE4			11
+
+
+// PREVIEW PAGE KEY
+#define KEY_TO_FILE         1  
+#define KEY_PRINT           6
 
 
 #define KEY_CONTINUE        2
@@ -351,8 +367,8 @@
 
 
 #define COLOR_RED              0xf800
-#define COLOR_BLUE             0x0210
-
+#define COLOR_WHITE             0x0210
+#define COLOR_WHITE            0xffff
 
 
 
@@ -468,6 +484,10 @@ namespace Anycubic {
       static void page205_handle(void);
       static void page206_handle(void);
 
+      static void page207_209_handle(void);
+			static void pageIco_handle(void);  // PreviewPage handler
+      static void page211_212_handle(void);
+
       static void pop_up_manager(void);
 
       void SendtoTFT(PGM_P);
@@ -483,10 +503,13 @@ namespace Anycubic {
       void PanelAction(uint8_t);
       void PanelProcess(uint8_t);
 
+		
+	
       static void SendValueToTFT(uint32_t value, uint32_t address);
       static void RequestValueFromTFT(uint32_t address);
       static void SendTxtToTFT(const char *pdata, uint32_t address);
       static void SendColorToTFT(uint32_t color, uint32_t address);
+			static void SendHexToTFT(const char *pdata);
       static void SendReadNumOfTxtToTFT(uint8_t number, uint32_t address);
       static void ChangePageOfTFT(uint32_t page_index);
       static void FakeChangePageOfTFT(uint32_t page_index);
