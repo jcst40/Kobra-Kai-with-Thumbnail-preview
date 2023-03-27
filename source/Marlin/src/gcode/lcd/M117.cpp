@@ -20,17 +20,36 @@
  *
  */
 
+#include "../../inc/MarlinConfig.h"
+#include "../../../MarlinCore.h"
 #include "../gcode.h"
 #include "../../lcd/marlinui.h"
+
+#include <map>
+#include <string>
+#include <stack>
 
 /**
  * M117: Set LCD Status Message
  */
 void GcodeSuite::M117() {
 
-  if (parser.string_arg && parser.string_arg[0])
-    ui.set_status(parser.string_arg);
-  else
-    ui.reset_status();
+  if (parser.string_arg && parser.string_arg[0]) {
+		
 
+		if (parser.command_letter == 'M' && parser.codenum == 117)  { 
+		
+		std::string str(parser.string_arg,31);
+    std::string first30Chars = str.substr(0, 30);
+ 
+		gcodeComment = first30Chars.c_str();
+		
+		}
+    ui.set_status(parser.string_arg);
+	
+	}
+		
+  else
+		gcodeComment = "G-Code Status Area";
+    ui.reset_status();
 }
