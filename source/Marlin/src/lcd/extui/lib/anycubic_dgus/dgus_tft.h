@@ -35,9 +35,9 @@
 #include "../../../../inc/MarlinConfigPre.h"
 #include "../../ui_api.h"
 
-#define DEVICE_NAME             "Anycubic Kobra Max"
-#define FIRMWARE_VER            "Kobra Max V2.8.7"
-#define BUILD_VOLUME            "400*400*450 (mm)"
+#define DEVICE_NAME             "Anycubic Kobra Standard"
+#define FIRMWARE_VER            "Kobra Kai v1.0"
+#define BUILD_VOLUME            "222*222*252 (mm)"
 #define TECH_SUPPORT            "https://www.anycubic.com"
 
 /****************** PAGE INDEX***********************/
