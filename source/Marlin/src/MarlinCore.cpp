@@ -250,6 +250,11 @@ PGMSTR(SP_X_LBL, " X:"); PGMSTR(SP_Y_LBL, " Y:"); PGMSTR(SP_Z_LBL, " Z:"); PGMST
 volatile MarlinState marlin_state = MF_INITIALIZING;
 volatile HomingState homing_state = NOT_HOMING;
 
+
+// Define gcodeComment
+
+   const char * gcodeComment = "G-Code Status Area";
+
 // For M109 and M190, this flag may be cleared (by M108) to exit the wait loop
 bool wait_for_heatup = true;
 
@@ -685,7 +690,7 @@ inline void manage_inactivity(const bool ignore_stepper_queue=false) {
   #if PIN_EXISTS(FET_SAFETY)
     static millis_t FET_next;
     if (ELAPSED(ms, FET_next)) {
-      FET_next = ms + FET_SAFETY_DELAY;  // 2µs pulse every FET_SAFETY_DELAY mS
+      FET_next = ms + FET_SAFETY_DELAY;  // 2Âµs pulse every FET_SAFETY_DELAY mS
       OUT_WRITE(FET_SAFETY_PIN, !FET_SAFETY_INVERTED);
       DELAY_US(2);
       WRITE(FET_SAFETY_PIN, FET_SAFETY_INVERTED);
@@ -712,7 +717,7 @@ inline void manage_inactivity(const bool ignore_stepper_queue=false) {
  *  - Read Buttons and Update the LCD
  *  - Run i2c Position Encoders
  *  - Auto-report Temperatures / SD Status
- *  - Update the Průša MMU2
+ *  - Update the PrÅ¯Å¡a MMU2
  *  - Handle Joystick jogging
  */
 void idle(TERN_(ADVANCED_PAUSE_FEATURE, bool no_stepper_sleep/*=false*/)) {
@@ -797,7 +802,7 @@ void idle(TERN_(ADVANCED_PAUSE_FEATURE, bool no_stepper_sleep/*=false*/)) {
     }
   #endif
 
-  // Update the Průša MMU2
+  // Update the PrÅ¯Å¡a MMU2
   TERN_(HAS_PRUSA_MMU2, mmu2.mmu_loop());
 
   // Handle Joystick jogging
@@ -979,17 +984,17 @@ inline void tmc_standby_setup() {
  *  - Print startup messages and diagnostics
  *  - Get EEPROM or default settings
  *  - Initialize managers for:
- *    �?temperature
- *    �?planner
- *    �?watchdog
- *    �?stepper
- *    �?photo pin
- *    �?servos
- *    �?LCD controller
- *    �?Digipot I2C
- *    �?Z probe sled
- *    �?status LEDs
- *    �?Max7219
+ *    â€?temperature
+ *    â€?planner
+ *    â€?watchdog
+ *    â€?stepper
+ *    â€?photo pin
+ *    â€?servos
+ *    â€?LCD controller
+ *    â€?Digipot I2C
+ *    â€?Z probe sled
+ *    â€?status LEDs
+ *    â€?Max7219
  */
 void setup() {
 
@@ -1127,7 +1132,7 @@ void setup() {
     delay(800);   // Required delay (since boot?)
     SERIAL_ECHOPGM("\nDWIN handshake ");
     if (DWIN_Handshake()) SERIAL_ECHOLNPGM("ok."); else SERIAL_ECHOLNPGM("error.");
-    DWIN_Frame_SetDir(1); // Orientation 90°
+    DWIN_Frame_SetDir(1); // Orientation 90Â°
     DWIN_UpdateLCD();     // Show bootscreen (first image)
   #else
     SETUP_RUN(ui.init());
