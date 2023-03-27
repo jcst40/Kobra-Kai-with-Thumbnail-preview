@@ -30,6 +30,7 @@
 
 #include "../../../../inc/MarlinConfigPre.h"
 
+
 #if ENABLED(ANYCUBIC_LCD_DGUS)
 
 #include "dgus_tft.h"
@@ -42,6 +43,172 @@
 //#include "../../../../libs/build_date.h"
 #include "../../../../MarlinCore.h"
 #include "../../../../feature/powerloss.h"
+
+// BEGIN SPECIAL CODE
+
+#include <stdio.h>
+#include <cstring>
+#include <string>
+#include <stdlib.h>
+#include <ctype.h>
+#include <stdint.h>
+#include <sstream>
+
+
+
+
+const char* myThumbnail;
+typedef struct {
+  char name[13] = "";   //8.3 + null
+  uint32_t thumbstart = 0;
+  int thumbsize = 0;
+  int thumbheight = 0;
+  int thumbwidth = 0;
+  uint8_t *thumbdata = nullptr;
+  float time = 0;
+  float filament = 0;
+  float layer = 0;
+  float width = 0;
+  float height = 0;
+  float length = 0;
+  void setname(const char * const fn);
+  void clear();
+} fileprop_t;
+fileprop_t fileprop;
+
+void fileprop_t::setname(const char * const fn) {
+  const uint8_t len = _MIN(sizeof(name) - 1, strlen(fn));
+  memcpy(&name[0], fn, len);
+  name[len] = '\0';
+}
+
+void fileprop_t::clear() {
+  fileprop.name[0] = '\0';
+  fileprop.thumbstart = 0;
+  fileprop.thumbsize = 0;
+  fileprop.thumbheight = 0;
+  fileprop.thumbwidth = 0;
+  fileprop.thumbdata = nullptr;
+  fileprop.time = 0;
+  fileprop.filament = 0;
+  fileprop.layer = 0;
+  fileprop.height = 0;
+  fileprop.width = 0;
+  fileprop.length = 0;
+}
+
+void Get_Value(char *buf, const char * const key, float &value) {
+  char num[10] = "";
+  char * posptr = 0;
+  uint8_t i = 0;
+  if (!!value) return;
+  posptr = strstr(buf, key);
+  if (posptr != nullptr) {
+    while (i < sizeof(num)) {
+      char c = posptr[0];
+      if (!ISEOL(c) && (c != 0)) {
+        if ((c > 47 && c < 58) || (c == '.')) num[i++] = c;
+        posptr++;
+      }
+      else {
+        num[i] = '\0';
+        value = atof(num);
+        return;
+      }
+    }
+  }
+}
+
+bool Has_Preview() {
+  const char * tbstart = "; thumbnail kobra 150x120";
+  char * posptr = 0;
+  uint8_t nbyte = 1;
+  uint32_t indx = 0;
+  char buf[256];
+  float tmp = 0;
+
+  fileprop.clear();
+  fileprop.setname(card.filename);
+
+  card.openFileRead(fileprop.name);
+
+  while ((nbyte > 0) && (indx < 4 * sizeof(buf)) && !fileprop.thumbstart) {
+    nbyte = card.read(buf, sizeof(buf) - 1);
+    if (nbyte > 0) {
+      buf[nbyte] = '\0';
+      Get_Value(buf, ";TIME:", fileprop.time);
+      Get_Value(buf, ";Filament used:", fileprop.filament);
+      Get_Value(buf, ";Layer height:", fileprop.layer);
+      Get_Value(buf, ";MINX:", tmp);
+      Get_Value(buf, ";MAXX:", fileprop.width);
+      fileprop.width -= tmp;
+      tmp = 0;
+      Get_Value(buf, ";MINY:", tmp);
+      Get_Value(buf, ";MAXY:", fileprop.length);
+      fileprop.length -= tmp;
+      tmp = 0;
+      Get_Value(buf, ";MINZ:", tmp);
+      Get_Value(buf, ";MAXZ:", fileprop.height);
+      fileprop.height -= tmp;
+      posptr = strstr(buf, tbstart);
+      if (posptr != nullptr) {
+        fileprop.thumbstart = indx + (posptr - &buf[0]);
+      }
+      else {
+        indx += _MAX(10, nbyte - (signed)strlen(tbstart));
+        card.setIndex(indx);
+      }
+    }
+  }
+
+  if (!fileprop.thumbstart) {
+    card.closefile();
+    // // LCD_MESSAGE_F("Thumbnail not found");
+    return 0;
+  }
+
+  // Get the size of the thumbnail
+  card.setIndex(fileprop.thumbstart + strlen(tbstart));
+  for (uint8_t i = 0; i < 16; i++) {
+    char c = card.get();
+    if (!ISEOL(c)) {
+      buf[i] = c;
+    }
+    else {
+      buf[i] = 0;
+      break;
+    }
+  }
+  fileprop.thumbsize = atoi(buf);
+
+  // Exit if there isn't a thumbnail
+  if (!fileprop.thumbsize) {
+    card.closefile();
+    //// LCD_MESSAGE_F("Invalid Thumbnail Size");
+    return 0;
+  }
+
+  uint16_t readed = 0;
+  char buf64[fileprop.thumbsize];
+  myThumbnail = new char[fileprop.thumbsize + 1]; // Reserve space for the JPEG thumbnail
+
+  while (readed < fileprop.thumbsize) {
+    uint8_t c = card.get();
+    if (!ISEOL(c) && (c != ';') && (c != ' ')) {
+      buf64[readed] = c;
+      readed++;
+    }
+  }
+  card.closefile();
+  buf64[readed] = 0;
+
+  memcpy((void*)myThumbnail, buf64, fileprop.thumbsize + 1);
+  return true;
+}
+
+
+// END SPECIAL CODE
+
 
 namespace Anycubic {
 
@@ -61,6 +228,7 @@ namespace Anycubic {
   const char MESSAGE_cold[]={0xB4,0xF2 ,0xD3,0xA1 ,0xCD,0xB7 ,0xCE,0xC2 ,0xB6,0xC8 ,0xB9,0xFD ,0xB5,0xCD,0x00}   ;
 
   const char *p_mesage[]={MESSAGE_charu ,MESSAGE_bachu ,MESSAGE_wuka,MESSAGE_lianji ,MESSAGE_tuoji ,MESSAGE_zanting, MESSAGE_tingzhi ,MESSAGE_wancheng ,MESSAGE_hotend_heating, MESSAGE_hotend_over, MESSAGE_bed_heating, MESSAGE_bed_over, MESSAGE_ready, MESSAGE_cold};
+
 
   DgusTFT::p_fun fun_array[] = {
                          DgusTFT::page1_handle,
@@ -150,6 +318,7 @@ namespace Anycubic {
   void DgusTFT::Startup() {
     selectedfile[0]   = '\0';
     panel_command[0]  = '\0';
+		gcodeComment = "G-Code Status Area";
     command_len       = 0;
     printer_state     = AC_printer_idle;
     pause_state       = AC_paused_idle;
@@ -279,6 +448,18 @@ namespace Anycubic {
 
       page203_handle();
 
+    } else if(page_index_now == 207 || page_index_now == 209) {
+
+      page207_209_handle();
+		
+		} else if(page_index_now == 208) {
+
+      pageIco_handle();
+		
+    } else if(page_index_now == 211 || page_index_now == 212) {
+
+      page211_212_handle();
+
     } else {
 
       if(lcd_info.language == ExtUI::CHS) {
@@ -381,7 +562,7 @@ namespace Anycubic {
 
         lcd_txtbox_page = 0;
         if(lcd_txtbox_index) {
-          SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+          SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
           lcd_txtbox_index = 0;
         }
 
@@ -396,7 +577,7 @@ namespace Anycubic {
 
         lcd_txtbox_page = 0;
         if(lcd_txtbox_index) {
-          SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+          SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
           lcd_txtbox_index = 0;
         }
 
@@ -566,6 +747,7 @@ namespace Anycubic {
         if (strcmp_P(msg + strlen(CUSTOM_MACHINE_NAME), MARLIN_msg_ready) == 0) {
           if(probe_cnt == GRID_MAX_POINTS_X*GRID_MAX_POINTS_Y) {
             probe_cnt = 0;
+            setZOffset_mm(0.05);
             injectCommands_P(PSTR("M500"));
             FakeChangePageOfTFT(PAGE_PreLEVEL); // this avoid a overquick UI fresh when probing done
             printer_state = AC_printer_idle;
@@ -643,6 +825,7 @@ namespace Anycubic {
         if (strcmp_P(msg, MARLIN_msg_print_aborted) == 0) {
           ChangePageOfTFT(PAGE_MAIN);
           printer_state = AC_printer_idle;
+					
           msg_matched = true;
         }
       } break;
@@ -781,6 +964,47 @@ namespace Anycubic {
       TFTSer.write(data_buf[i]);
     }
   }
+	
+	
+	void DgusTFT::SendHexToTFT(const char *pdata) {
+    const char* hex_str = pdata;
+    size_t len = strlen(hex_str);
+    uint8_t bytes[len/2];
+
+    // Find the position of "5AA5" closest to the middle of hex_str
+    size_t middle = len / 2;
+    const char* split_point = nullptr;
+    const char* search_ptr = hex_str;
+
+    while ((search_ptr = strstr(search_ptr, "5AA5")) != nullptr) {
+        if (abs((search_ptr - hex_str) - middle) < abs((split_point - hex_str) - middle) || split_point == nullptr) {
+            split_point = search_ptr;
+        }
+        search_ptr += 4; // Move to the next position after the found "5AA5"
+    }
+
+    if (split_point == nullptr) {
+        // "5AA5" not found, return
+        return;
+    }
+
+    // Calculate lengths for the two parts
+    size_t first_part_len = split_point - hex_str;
+    size_t second_part_len = len - first_part_len;
+
+    // Send the first part
+    for (size_t i = 0; i < first_part_len; i += 2) {
+        sscanf(hex_str + i, "%2hhx", &bytes[i/2]);
+        TFTSer.write(bytes[i/2]);
+    }
+
+    // Send the second part
+    for (size_t i = 0; i < second_part_len; i += 2) {
+        sscanf(split_point + i, "%2hhx", &bytes[(first_part_len + i)/2]);
+        TFTSer.write(bytes[(first_part_len + i)/2]);
+    }
+}
+	
 
   void DgusTFT::SendColorToTFT(uint32_t color, uint32_t address) {
 
@@ -849,6 +1073,10 @@ namespace Anycubic {
             data_temp = page_index+12;
         } else if(PAGE_CHS_PROBE_PRECHECK <= page_index && page_index <= PAGE_CHS_PROBE_PRECHECK_FAILED) {
             data_temp = page_index+3;
+        } else if(PAGE_CHS_TOOL_CASELIGHT == page_index) {
+            data_temp = page_index+2;
+        } else if(PAGE_CHS_PRINTING_SETTING == page_index) {
+            data_temp = page_index+1;
         } else {
             data_temp = page_index+120;
         }
@@ -1116,6 +1344,7 @@ namespace Anycubic {
   void DgusTFT::SelectFile() {
     strncpy(selectedfile, panel_command + 4, command_len - 4);
     selectedfile[command_len - 5] = '\0';
+		gcodeComment = "G-Code Status Area";
     #if ACDEBUG(AC_FILE)
       SERIAL_ECHOLNPAIR_F(" Selected File: ",selectedfile);
     #endif
@@ -1171,12 +1400,12 @@ namespace Anycubic {
   	    else if(control_index==TXT_HOTEND_TARGET||control_index==TXT_ADJUST_HOTEND)//hotend target temp
   	  	{
            p_u8 =  (unsigned char *)(&control_value) ;//get  value
-          *p_u8 = data_buf[5];
-           p_u8++;
-          *p_u8 = data_buf[4];
+  		*p_u8 = data_buf[5];
+  		 p_u8++;
+  		*p_u8 = data_buf[4];
 
-          temp=constrain((uint16_t)control_value, 0, HEATER_0_MAXTEMP);
-          setTargetTemp_celsius(temp, E0);
+  		temp=constrain((uint16_t)control_value, 0, HEATER_0_MAXTEMP);
+        setTargetTemp_celsius(temp, E0);
   	    }
   	    else if(control_index==TXT_BED_TARGET||control_index==TXT_ADJUST_BED)//bed target temp
   	  	{
@@ -1187,8 +1416,8 @@ namespace Anycubic {
 
   		  temp=constrain((uint16_t)control_value, 0, BED_MAXTEMP);
           setTargetTemp_celsius(temp, BED);
-           //sprintf(str_buf,"%u/%u",(uint16_t)thermalManager.degBed(),(uint16_t)control_value);
-  	     //SendTxtToTFT(str_buf,TXT_PRINT_BED );
+
+
   	    }
   	  	else if(control_index==TXT_FAN_SPEED_TARGET)//fan speed
   	  	{
@@ -1335,7 +1564,7 @@ namespace Anycubic {
         lcd_txtbox_page = 0;
 
         if(lcd_txtbox_index) {
-          SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+          SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
           lcd_txtbox_index = 0;
         }
 
@@ -1346,10 +1575,12 @@ namespace Anycubic {
 
 	  case 2:   // tool
 	  {
-		ChangePageOfTFT(PAGE_TOOL);
 
 #if ENABLED(CASE_LIGHT_ENABLE)
+        ChangePageOfTFT(PAGE_CHS_TOOL_CASELIGHT);
 		SendValueToTFT(getCaseLightState(), ADDRESS_SYSTEM_LED_STATUS);
+#else
+        ChangePageOfTFT(PAGE_TOOL);
 #endif
 
 	  }
@@ -1404,7 +1635,7 @@ namespace Anycubic {
 	case 1: // return
 	  {
 	   ChangePageOfTFT(PAGE_MAIN);
-	   SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+	   SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
 	  }
 	  break;
 
@@ -1413,7 +1644,7 @@ namespace Anycubic {
 	  if(lcd_txtbox_page > 0) {
 	    lcd_txtbox_page--;
 
-        SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+        SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
 	    lcd_txtbox_index = 0;
 
 	    SendFileList(lcd_txtbox_page*5);
@@ -1426,7 +1657,7 @@ namespace Anycubic {
       if((lcd_txtbox_page+1) * 5 < filenavigator.getFileNum()) {
         lcd_txtbox_page++;
      	
-        SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+        SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
         lcd_txtbox_index = 0;
 
      	SendFileList(lcd_txtbox_page*5);
@@ -1445,7 +1676,7 @@ namespace Anycubic {
 
         lcd_txtbox_page = 0;
         if(lcd_txtbox_index) {
-          SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+          SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
           lcd_txtbox_index = 0;
         }
 
@@ -1453,80 +1684,67 @@ namespace Anycubic {
 	  }
 	  break;
 
-	  case 5: // resume of outage(last power off)
-#if ACDEBUG(AC_MARLIN)
-	    SERIAL_ECHOLNPAIR("printer_state: ", printer_state);
-#endif
-        if(lcd_txtbox_index > 0 && lcd_txtbox_index  < 6) {   // 1~5
 
-          if(filenavigator.filelist.seek(lcd_txtbox_page*5+(lcd_txtbox_index-1))) {
-  
-            SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
-
-#if ENABLED(CASE_LIGHT_ENABLE)
-            setCaseLightState(1);
-#endif
-
-            char str_buf[20];
-            strncpy_P(str_buf, filenavigator.filelist.longFilename(), 17);
-            str_buf[17] = '\0';
-            SendTxtToTFT(str_buf, TXT_PRINT_NAME);
-
-            if (printer_state == AC_printer_resuming_from_power_outage) {
-              // Need to home here to restore the Z position
-//              injectCommands_P(AC_cmnd_power_loss_recovery);
-//              SERIAL_ECHOLNPAIR("start resumeing from power outage: ", AC_cmnd_power_loss_recovery);
-              ChangePageOfTFT(PAGE_STATUS2);    // show pause
-              injectCommands_P(PSTR("M1000"));  // home and start recovery
-            }
-          }
-        }
-	    break;
-
-	  case 6:   // start print
+	  case 6:   // Go to preview screen
           if(lcd_txtbox_index > 0 && lcd_txtbox_index  < 6) {   // 1~5
 
             if(filenavigator.filelist.seek(lcd_txtbox_page*5+(lcd_txtbox_index-1))) {
 
-#if 0
-              SERIAL_ECHOLNPAIR("start print: ", lcd_txtbox_page*5+(lcd_txtbox_index-1));
-              SERIAL_ECHOLNPAIR("start print: ", filenavigator.filelist.shortFilename());
-              SERIAL_ECHOLNPAIR("start print: ", filenavigator.filelist.longFilename());
-#endif
-
-              SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
-
-              // Allows printer to restart the job if we dont want to recover
-              if (printer_state == AC_printer_resuming_from_power_outage) {
-                injectCommands_P(PSTR("M1000 C")); // Cancel recovery
-                printer_state = AC_printer_idle;
-              }
-
-#if ENABLED(CASE_LIGHT_ENABLE)
-              setCaseLightState(1);
-#endif
-
-              printFile(filenavigator.filelist.shortFilename());
-
+              SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
               char str_buf[20];
-              strncpy_P(str_buf, filenavigator.filelist.longFilename(), 17);
-              str_buf[17] = '\0';
-              SendTxtToTFT(str_buf, TXT_PRINT_NAME);
+              	
 
-              sprintf(str_buf, "%d", (uint16_t)getFeedrate_percent());
-              SendTxtToTFT(str_buf, TXT_PRINT_SPEED);
+							// Send file name
+							strncpy_P(str_buf, filenavigator.filelist.longFilename(), 19);
+              str_buf[19] = '\0';
+              SendTxtToTFT(str_buf, TXT_PRINT_NAME); 
+									
+							// Send ICO to Preview Screen
+								 
+							if (Has_Preview()) { 
 
-              sprintf(str_buf, "%d", (uint16_t)getProgress_percent());
-              SendTxtToTFT(str_buf, TXT_PRINT_PROGRESS);
+									char buf[46];
+									char str_1[6] = "";
+									char str_2[6] = "";
+									char str_3[6] = "";
 
-              uint32_t time = 0;
-              sprintf(str_buf, "%s H ", utostr3(time/60));
-              sprintf(str_buf+strlen(str_buf), "%s M", utostr3(time%60));
-              SendTxtToTFT(str_buf, TXT_PRINT_TIME);
+									if (fileprop.time) {
+										sprintf_P(buf, PSTR("Estimated time: %i:%02i"), (uint16_t)fileprop.time / 3600, ((uint16_t)fileprop.time % 3600) / 60);
+										SendTxtToTFT(buf,0x21b0);
+									}
+									if (fileprop.filament) {
+										sprintf_P(buf, PSTR("Filament used: %s m"), dtostrf(fileprop.filament, 1, 2, str_1));
+										SendTxtToTFT(buf,0x21e0);
+									}
+									if (fileprop.layer) {
+										sprintf_P(buf, PSTR("Layer height: %s mm"), dtostrf(fileprop.layer, 1, 2, str_1));
+										SendTxtToTFT(buf,0x2210);
+									}
+									if (fileprop.width) {
+										sprintf_P(buf, PSTR("Volume: %sx%sx%s mm"), dtostrf(fileprop.width, 1, 1, str_1), dtostrf(fileprop.length, 1, 1, str_2), dtostrf(fileprop.height, 1, 1, str_3));
+										SendTxtToTFT(buf,0x2240);
+									}
+															
+									 SendHexToTFT(myThumbnail);
+									 delete[] myThumbnail;	
+									 SendHexToTFT("5AA507827FFE5AA58000");
 
-              ChangePageOfTFT(PAGE_STATUS2);
+							} else {
+									
+										// Erase all other date expect name
+										SendTxtToTFT("                              ",0x21b0);
+										SendTxtToTFT("                              ",0x21e0);
+										SendTxtToTFT("                              ",0x2210);								
+										SendTxtToTFT("                              ",0x2240);
+										SendHexToTFT("5AA5F3828000ffd8ffe000104a46494600010101006000600000ffdb004300100b0c0e0c0a100e0d0e1211101318281a181616183123251d283a333d3c3933383740485c4e404457453738506d51575f626768673e4d71797064785c656763ffdb0043011112121815182f1a1a2f634238426363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363ffc00011080001000103012200021101031101ffc4001f0000010501010101010100000000000000000102030405060708090a0bffc400b5100002010303020403050504040000017d0102030004110512215AA5F382807831410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffc4001f0100030101010101010101010000000000000102030405060708090a0bffc400b51100020102040403040705040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0155AA5F38280F06272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9faffda000c03010002110311003f00e5a8a28ae703ffd90000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+									  SendHexToTFT("5AA507827FFE5AA80000");
+						}
+							
+									// Change to Preview Screen
+									ChangePageOfTFT(PAGE_PREVIEW);
             }
-          }
+          }	
+					
 	  break;
 
 	  case 7:   // txtbox 1 click
@@ -1559,14 +1777,117 @@ namespace Anycubic {
           SendColorToTFT(COLOR_RED, TXT_DISCRIBE_0 + 0x30*(lcd_txtbox_index-1));
 
           if(lcd_txtbox_index_last && lcd_txtbox_index_last != lcd_txtbox_index) {   // 1~5
-            SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0 + 0x30*(lcd_txtbox_index_last-1));
+            SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0 + 0x30*(lcd_txtbox_index_last-1));
           }
           lcd_txtbox_index_last = lcd_txtbox_index;
 	    }
 	    break;
 	  }
+   }
+  }
+	
+	
+	void DgusTFT::pageIco_handle(void) {
+
+  char file_index = 0;
+
+	switch (key_value) {
+	case 0:
+      break;
+
+	case 1: // return
+	  {
+		 
+		 lcd_txtbox_index = 0;
+	   ChangePageOfTFT(PAGE_FILE);
+	   
+	  }
+	  break;
+
+
+	  case 5: // resume of outage(last power off)
+#if ACDEBUG(AC_MARLIN)
+	    SERIAL_ECHOLNPAIR("printer_state: ", printer_state);
+#endif
+        if(lcd_txtbox_index > 0 && lcd_txtbox_index  < 6) {   // 1~5
+
+          if(filenavigator.filelist.seek(lcd_txtbox_page*5+(lcd_txtbox_index-1))) {
+  
+            SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+
+#if ENABLED(CASE_LIGHT_ENABLE)
+            setCaseLightState(1);
+#endif
+
+            char str_buf[20];
+            strncpy_P(str_buf, filenavigator.filelist.longFilename(), 17);
+            str_buf[17] = '\0';
+            SendTxtToTFT(str_buf, TXT_PRINT_NAME);
+
+            if (printer_state == AC_printer_resuming_from_power_outage) {
+              // Need to home here to restore the Z position
+//              injectCommands_P(AC_cmnd_power_loss_recovery);
+//              SERIAL_ECHOLNPAIR("start resumeing from power outage: ", AC_cmnd_power_loss_recovery);
+              ChangePageOfTFT(PAGE_STATUS2);    // show pause
+              injectCommands_P(PSTR("M1000"));  // home and start recovery
+            }
+          }
+        }
+	    break;
+
+	  case 6:   // start print
+          if(lcd_txtbox_index > 0 && lcd_txtbox_index  < 6) {   // 1~5
+
+            if(filenavigator.filelist.seek(lcd_txtbox_page*5+(lcd_txtbox_index-1))) {
+
+#if 0
+              SERIAL_ECHOLNPAIR("start print: ", lcd_txtbox_page*5+(lcd_txtbox_index-1));
+              SERIAL_ECHOLNPAIR("start print: ", filenavigator.filelist.shortFilename());
+              SERIAL_ECHOLNPAIR("start print: ", filenavigator.filelist.longFilename());
+#endif
+
+              SendColorToTFT(COLOR_WHITE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
+
+              // Allows printer to restart the job if we dont want to recover
+              if (printer_state == AC_printer_resuming_from_power_outage) {
+                injectCommands_P(PSTR("M1000 C")); // Cancel recovery
+                printer_state = AC_printer_idle;
+              }
+
+#if ENABLED(CASE_LIGHT_ENABLE)
+              setCaseLightState(1);
+#endif
+
+              printFile(filenavigator.filelist.shortFilename());
+
+              char str_buf[20];
+              strncpy_P(str_buf, filenavigator.filelist.longFilename(), 17);
+              str_buf[17] = '\0';
+              SendTxtToTFT(str_buf, TXT_PRINT_NAME);
+
+              sprintf(str_buf, "%d", (uint16_t)getFeedrate_percent());
+              SendTxtToTFT(str_buf, TXT_PRINT_SPEED);
+
+              sprintf(str_buf, "%d", (uint16_t)getProgress_percent());
+              SendTxtToTFT(str_buf, TXT_PRINT_PROGRESS);
+
+
+              uint32_t time = 0;
+              sprintf(str_buf, "%s H ", utostr3(time/60));
+              sprintf(str_buf+strlen(str_buf), "%s M", utostr3(time%60));
+              SendTxtToTFT(str_buf, TXT_PRINT_TIME);
+							gcodeComment = "G-Code Status Area";
+							SendTxtToTFT(gcodeComment, TXT_PRINT_COMMENT);
+
+              ChangePageOfTFT(PAGE_STATUS2);
+            }
+          }
+	  break;
     }
   }
+	
+	
+	
 
     
     void DgusTFT::page3_handle(void)
@@ -1599,11 +1920,14 @@ namespace Anycubic {
 #endif
             if(pause_state == AC_paused_idle || pause_state == AC_paused_filament_lack ||
                printer_state == AC_printer_resuming_from_power_outage) {
-
-              printer_state = AC_printer_idle;
-              pause_state = AC_paused_idle;
-              resumePrint();
-              ChangePageOfTFT(PAGE_STATUS2);    // show pasue print
+              if(READ(FIL_RUNOUT_PIN) == getFilamentRunoutOriginState()) {
+                printer_state = AC_printer_idle;
+                pause_state = AC_paused_idle;
+                resumePrint();
+                ChangePageOfTFT(PAGE_STATUS2);    // show pasue print
+              } else {
+                pop_up_index = 15;
+              }
               flash_time = millis();
 
             } else {
@@ -1618,10 +1942,14 @@ namespace Anycubic {
              break;
 
           case 4: // print change param
-            ChangePageOfTFT(PAGE_ADJUST);
-#if ENABLED(CASE_LIGHT_ENABLE)
+
+#ifdef CASE_LIGHT_ENABLE
+            ChangePageOfTFT(PAGE_CHS_PRINTING_SETTING);
             SendValueToTFT(getCaseLightState(), ADDRESS_PRINT_SETTING_LED_STATUS);
+#else
+            ChangePageOfTFT(PAGE_ADJUST);
 #endif
+
             SendValueToTFT((uint16_t)getTargetTemp_celsius(E0), TXT_ADJUST_HOTEND);
             SendValueToTFT((uint16_t)getTargetTemp_celsius(BED), TXT_ADJUST_BED);
             feedrate_last = (uint16_t)getFeedrate_percent();
@@ -1645,6 +1973,8 @@ namespace Anycubic {
           progress_last=getProgress_percent();
           sprintf(str_buf, "%u", progress_last);
           SendTxtToTFT(str_buf, TXT_PRINT_PROGRESS);
+					
+					
         }
 
         // Get Printing Time
@@ -1652,6 +1982,8 @@ namespace Anycubic {
         sprintf(str_buf, "%s H ", utostr3(time/60));
         sprintf(str_buf+strlen(str_buf), "%s M", utostr3(time%60));
         SendTxtToTFT(str_buf, TXT_PRINT_TIME);
+				SendTxtToTFT(gcodeComment, TXT_PRINT_COMMENT);
+
     }
 
     void DgusTFT::page4_handle(void)
@@ -1693,10 +2025,14 @@ namespace Anycubic {
           break;
 
         case 4: // print settings
-          ChangePageOfTFT(PAGE_ADJUST);
-#if ENABLED(CASE_LIGHT_ENABLE)
+
+#ifdef CASE_LIGHT_ENABLE
+          ChangePageOfTFT(PAGE_CHS_PRINTING_SETTING);
           SendValueToTFT(getCaseLightState(), ADDRESS_PRINT_SETTING_LED_STATUS);
+#else
+          ChangePageOfTFT(PAGE_ADJUST);
 #endif
+
           SendValueToTFT((uint16_t)getTargetTemp_celsius(E0), TXT_ADJUST_HOTEND);
           SendValueToTFT((uint16_t)getTargetTemp_celsius(BED), TXT_ADJUST_BED);
           feedrate_last = (uint16_t)getFeedrate_percent();
@@ -1730,6 +2066,7 @@ namespace Anycubic {
         sprintf(str_buf, "%s H ", utostr3(time/60));
         sprintf(str_buf+strlen(str_buf), "%s M", utostr3(time%60));
         SendTxtToTFT(str_buf, TXT_PRINT_TIME);
+				SendTxtToTFT(gcodeComment, TXT_PRINT_COMMENT);
     }
 
     void DgusTFT::page5_handle(void)          // print settings
@@ -1762,7 +2099,7 @@ namespace Anycubic {
         steps = mmToWholeSteps(-0.05, Z);
         babystepAxis_steps(steps, Z);
 
-        z_off -= 0.05f;
+        z_off -= 0.01f;
         setZOffset_mm(z_off);
 
         sprintf(str_buf, "%.2f", getZOffset_mm());
@@ -1783,7 +2120,7 @@ namespace Anycubic {
         steps = mmToWholeSteps(0.05, Z);
         babystepAxis_steps(steps, Z);
 
-        z_off += 0.05f;
+        z_off += 0.01f;
         setZOffset_mm(z_off);
 
         sprintf(str_buf, "%.2f", getZOffset_mm());
@@ -1820,8 +2157,8 @@ namespace Anycubic {
           RequestValueFromTFT(TXT_FAN_SPEED_TARGET);
 
           if(z_change) {
-            z_change = false;
             injectCommands_P(PSTR("M500"));
+            z_change = false;
           }
 
           if(AC_printer_printing == printer_state) {
@@ -1924,9 +2261,15 @@ namespace Anycubic {
         switch (key_value) {
           case 0:
             break;
-          
+
           case 1://return
+
+#ifdef CASE_LIGHT_ENABLE
+            ChangePageOfTFT(PAGE_CHS_TOOL_CASELIGHT);
+#else
             ChangePageOfTFT(PAGE_TOOL);
+#endif
+
             break;
 
           case 5:
@@ -2033,7 +2376,14 @@ namespace Anycubic {
          
           case 1://return
           {
+
+#if ENABLED(CASE_LIGHT_ENABLE)
+            ChangePageOfTFT(PAGE_CHS_TOOL_CASELIGHT);
+            SendValueToTFT(getCaseLightState(), ADDRESS_SYSTEM_LED_STATUS);
+#else
             ChangePageOfTFT(PAGE_TOOL);
+#endif
+
           }
           break;
           case 2:
@@ -2053,13 +2403,27 @@ namespace Anycubic {
           case 6: // cooling
             setTargetTemp_celsius(0, E0); 
             setTargetTemp_celsius(0, BED);
+
+#if ENABLED(CASE_LIGHT_ENABLE)
+            ChangePageOfTFT(PAGE_CHS_TOOL_CASELIGHT);
+            SendValueToTFT(getCaseLightState(), ADDRESS_SYSTEM_LED_STATUS);
+#else
             ChangePageOfTFT(PAGE_TOOL);
+#endif
+
           break;
 
           case 7: // send target temp
             RequestValueFromTFT(TXT_HOTEND_TARGET);
             RequestValueFromTFT(TXT_BED_TARGET);
+
+#if ENABLED(CASE_LIGHT_ENABLE)
+            ChangePageOfTFT(PAGE_CHS_TOOL_CASELIGHT);
+            SendValueToTFT(getCaseLightState(), ADDRESS_SYSTEM_LED_STATUS);
+#else
             ChangePageOfTFT(PAGE_TOOL);
+#endif
+
           break;
     }
 
@@ -2077,11 +2441,19 @@ namespace Anycubic {
         static millis_t flash_time = 0;
         switch (key_value)
         {
-                case 0:
-         break;
+          case 0:
+          break;
+
           case 1:   // return
           {
-              ChangePageOfTFT(PAGE_TOOL);
+
+#if ENABLED(CASE_LIGHT_ENABLE)
+            ChangePageOfTFT(PAGE_CHS_TOOL_CASELIGHT);
+            SendValueToTFT(getCaseLightState(), ADDRESS_SYSTEM_LED_STATUS);
+#else
+            ChangePageOfTFT(PAGE_TOOL);
+#endif
+
           }
           break;
           
@@ -2103,7 +2475,14 @@ namespace Anycubic {
           case 6:   // ok
             RequestValueFromTFT(TXT_FAN_SPEED_TARGET);
             RequestValueFromTFT(TXT_PRINT_SPEED_TARGET);
+
+#if ENABLED(CASE_LIGHT_ENABLE)
+            ChangePageOfTFT(PAGE_CHS_TOOL_CASELIGHT);
+            SendValueToTFT(getCaseLightState(), ADDRESS_SYSTEM_LED_STATUS);
+#else
             ChangePageOfTFT(PAGE_TOOL);
+#endif
+
           break;
     }
     
@@ -2375,7 +2754,7 @@ namespace Anycubic {
               }
               break;
 
-              case 2:  // -
+              case 2: // -
               {
                 z_off = getZOffset_mm();
 
@@ -2386,7 +2765,7 @@ namespace Anycubic {
                 steps = mmToWholeSteps(-0.05, Z);
                 babystepAxis_steps(steps, Z);
 
-                z_off -= 0.05f;
+                z_off -= 0.01f;
                 setZOffset_mm(z_off);
 
                 sprintf(str_buf, "%.2f", getZOffset_mm());
@@ -2407,7 +2786,7 @@ namespace Anycubic {
                 steps = mmToWholeSteps(0.05, Z);
                 babystepAxis_steps(steps, Z);
 
-                z_off += 0.05f;
+                z_off += 0.01f;
                 setZOffset_mm(z_off);
 
                 sprintf(str_buf, "%.2f", getZOffset_mm());
@@ -2422,7 +2801,6 @@ namespace Anycubic {
 #if ACDEBUG(AC_MARLIN)
                 SERIAL_ECHOLNPAIR("z off: ", ftostr(getZOffset_mm()));
 #endif
-
                 if(z_change) {
                   z_change = false;
                   injectCommands_P(PSTR("M500"));
@@ -2461,7 +2839,7 @@ namespace Anycubic {
               case 3: // ABS
               { 
                 setTargetTemp_celsius(240, E0);
-                setTargetTemp_celsius(100, BED);
+                setTargetTemp_celsius(90, BED);
                 ChangePageOfTFT(PAGE_PREHEAT);
               }
 
@@ -2758,7 +3136,6 @@ namespace Anycubic {
 
                 setFeedrate_percent(100);           // resume print speed to 100
                 clearProgress_seconds_elapsed();    // clear print time elapsed
-
               }
               break;
 
@@ -2893,7 +3270,7 @@ namespace Anycubic {
           {
             case 0:
             break;
-
+  
             case 1:   // auto leveling start
             {
               #if PROBING_NOZZLE_TEMP || LEVELING_NOZZLE_TEMP
@@ -3170,6 +3547,7 @@ namespace Anycubic {
 
             sprintf(str_buf, "%u", (uint16_t)getProgress_percent());
             SendTxtToTFT(str_buf, TXT_PRINT_PROGRESS);
+		     		
 
             ChangePageOfTFT(PAGE_STATUS2);               // show pause
 #ifdef CASE_LIGHT_ENABLE
@@ -3217,6 +3595,7 @@ namespace Anycubic {
   
             sprintf(str_buf, "%u", (uint16_t)getProgress_percent());
             SendTxtToTFT(str_buf, TXT_PRINT_PROGRESS);
+						
 
             ChangePageOfTFT(PAGE_STATUS2);      // show pause
 
@@ -3433,6 +3812,14 @@ namespace Anycubic {
         static uint8_t probe_state_last = 0;
         char str_buf[16];
 
+#if PROBING_NOZZLE_TEMP || LEVELING_NOZZLE_TEMP
+        setTargetTemp_celsius(LEVELING_NOZZLE_TEMP, E0);
+#endif
+
+#if PROBING_BED_TEMP || LEVELING_BED_TEMP
+        setTargetTemp_celsius(LEVELING_BED_TEMP, BED);
+#endif
+
         delay(3000);
 
         injectCommands_P(PSTR("M851 Z0\nG28\nG29"));
@@ -3451,6 +3838,166 @@ namespace Anycubic {
             return;
         }
         flash_time=millis();
+    }
+
+    void DgusTFT::page207_209_handle(void)
+    {
+      unsigned char str_buf[20];
+      unsigned int temp;
+      switch (key_value) {
+        case 0:
+        break;
+  
+        case 1:   // return
+        {
+          ChangePageOfTFT(PAGE_MAIN);
+        }
+        break;
+  
+        case 2:
+        {
+          ChangePageOfTFT(PAGE_MOVE);
+        }
+        break;
+        
+        case 3:   // set temperature
+        ChangePageOfTFT(PAGE_TEMP);
+        SendValueToTFT((uint16_t)getActualTemp_celsius(E0), TXT_HOTNED_NOW);
+        SendValueToTFT((uint16_t)getTargetTemp_celsius(E0), TXT_HOTEND_TARGET);
+        SendValueToTFT((uint16_t)getActualTemp_celsius(BED), TXT_BED_NOW);
+        SendValueToTFT((uint16_t)getTargetTemp_celsius(BED), TXT_BED_TARGET);
+  
+        break;
+        
+        case 4:
+         ChangePageOfTFT(PAGE_SPEED);
+         SendValueToTFT((uint16_t)getActualFan_percent(FAN0), TXT_FAN_SPEED_NOW);
+         SendValueToTFT((uint16_t)getTargetFan_percent(FAN0), TXT_FAN_SPEED_TARGET);
+         SendValueToTFT((uint16_t)getFeedrate_percent(), TXT_PRINT_SPEED_NOW);
+         SendValueToTFT((uint16_t)getFeedrate_percent(), TXT_PRINT_SPEED_TARGET);
+        break;
+  
+        case 5:   // turn off the xyz motor
+          if(!isMoving()) {
+              disable_all_steppers();
+          }
+        break;
+  
+        case 6:   // light control
+  #if ENABLED(CASE_LIGHT_ENABLE)
+          if(getCaseLightState()) {
+            setCaseLightState(0);
+            SendValueToTFT(0, ADDRESS_SYSTEM_LED_STATUS);
+          } else {
+            setCaseLightState(1);
+            SendValueToTFT(1, ADDRESS_SYSTEM_LED_STATUS);
+          }
+  #endif
+        break;
+      }
+    }
+
+// print settings with case light
+    void DgusTFT::page211_212_handle(void)
+    {
+      char str_buf[10];
+      float z_off;
+      int16_t steps;
+      static bool z_change = false;
+
+      switch (key_value) {
+        case 0:
+      break;
+
+      case 1: // return
+        if(AC_printer_printing == printer_state) {
+          ChangePageOfTFT(PAGE_STATUS2);  // show pause
+        } else if(AC_printer_paused == printer_state) {
+          ChangePageOfTFT(PAGE_STATUS1);  // show print
+        }
+      break;
+
+      case 2: // -
+      {
+        z_off = getZOffset_mm();
+
+        if(z_off <= -5) {
+            return ;
+        }
+
+        steps = mmToWholeSteps(-0.05, Z);
+        babystepAxis_steps(steps, Z);
+
+        z_off -= 0.01f;
+        setZOffset_mm(z_off);
+
+        sprintf(str_buf, "%.2f", getZOffset_mm());
+        SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
+
+        z_change = true;
+      }
+      break;
+
+      case 3: // +
+      {
+        z_off = getZOffset_mm();
+
+        if(z_off >= 5) {
+            return ;
+        }
+
+        steps = mmToWholeSteps(0.05, Z);
+        babystepAxis_steps(steps, Z);
+
+        z_off += 0.01f;
+        setZOffset_mm(z_off);
+
+        sprintf(str_buf, "%.2f", getZOffset_mm());
+        SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
+
+        z_change = true;
+      }
+      break;
+
+        case 4: // light control
+#if ENABLED(CASE_LIGHT_ENABLE)
+          if(getCaseLightState()) {
+            SendValueToTFT(0, ADDRESS_PRINT_SETTING_LED_STATUS);
+            setCaseLightState(0);
+          } else {
+            SendValueToTFT(1, ADDRESS_PRINT_SETTING_LED_STATUS);
+            setCaseLightState(1);
+          }
+#endif
+          break;
+
+        case 5:
+          ChangePageOfTFT(PAGE_DONE);
+          break;
+
+        case 6:
+  
+          break;
+
+        case 7:
+          RequestValueFromTFT(TXT_ADJUST_BED);
+          RequestValueFromTFT(TXT_ADJUST_SPEED);
+          RequestValueFromTFT(TXT_ADJUST_HOTEND);
+          RequestValueFromTFT(TXT_FAN_SPEED_TARGET);
+
+          if(z_change) {
+            injectCommands_P(PSTR("M500"));
+            z_change = false;
+          }
+
+          if(AC_printer_printing == printer_state) {
+            ChangePageOfTFT(PAGE_STATUS2);  // show pause
+          } else if(AC_printer_paused == printer_state) {
+            ChangePageOfTFT(PAGE_STATUS1);  // show print
+          }
+
+          break;
+      }
     }
 
     void DgusTFT::pop_up_manager(void)
