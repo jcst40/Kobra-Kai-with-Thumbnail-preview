@@ -32,7 +32,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-
+extern const char * gcodeComment;
 extern char pause_steps ;
 
 void stop();
