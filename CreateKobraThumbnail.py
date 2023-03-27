@@ -32,7 +32,7 @@ class CreateKobraThumbnail(Script):
         except Exception:
             Logger.logException("w", "Failed to create snapshot image")
 
-    def _encodeSnapshot(self, snapshot, quality=50):      
+    def _encodeSnapshot(self, snapshot, quality=10):      
         Major = 0
         Minor = 0
         try:
@@ -113,12 +113,12 @@ class CreateKobraThumbnail(Script):
     def execute(self, data):
         snapshot = self._createSnapshot()
         if snapshot:
-            quality = 50
+            quality = 10
             while True:
                 encoded_snapshot = self._encodeSnapshot(snapshot, quality)
                 snapshot_gcode = self._convertSnapshotToGcode(encoded_snapshot)
                 final_size = len("\n".join(snapshot_gcode))
-                if final_size < 6000:
+                if final_size < 5000:
                     break
                 quality -= 3
 
