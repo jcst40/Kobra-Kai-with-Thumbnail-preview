@@ -56,4 +56,6 @@ Instructions for installing G-Code Thumbnail Script in Cura:
 -Restart Cura and go to Extensions - Post Processing - Modify G-Code and Add Script. Select Create Kobra Thumbnail.
 -Now whenever you slice a script, a thumbnail is created in the G-Code file that the Kobra can read. Only Thumbnails with this scripts are recognised.
 
+After installing remember to do bed leveling, set Z-offset and your calibration routine. Enjoy!
+
 //
