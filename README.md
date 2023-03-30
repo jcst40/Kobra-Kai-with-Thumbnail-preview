@@ -54,6 +54,6 @@ Instructions for installing G-Code Thumbnail Script in Cura:
 -Open the Config folder (Help - Show configuration Folder). Navigate to the Script folder. If that doesnt work the folder ist usually in the C:\Users\Your Name\AppData\Roaming\cura\5.x\scripts
 -Download and put the script here. Must have a .py extension
 -Restart Cura and go to Extensions - Post Processing - Modify G-Code and Add Script. Select Create Kobra Thumbnail.
--Now whenever you slice a script, a thumbnail is created in the G-Code file that the Kobra Max can read. Only Thumbnails with this scripts are recognised.
+-Now whenever you slice a script, a thumbnail is created in the G-Code file that the Kobra can read. Only Thumbnails with this scripts are recognised.
 
 //
