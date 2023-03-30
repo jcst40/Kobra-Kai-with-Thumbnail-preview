@@ -1,4 +1,8 @@
 //
+
+*****currently not saving zoffset****
+
+
 # Kobra-Kai-with-Thumbnail-preview
 This is basically malebuffy's Kobra Kai firmware forked to run in the Anycubic Kobra Standard with some extra features from jojos38 firmware.
 Features:
