@@ -17,13 +17,6 @@ From jojos38:
 
 -Faster auto leveling
 
--Faster homing
-
--Slightly faster printing when using default printer settings
-
--Slightly faster booting speed
-
--Reduced noise (motherboard fan)
 
 (No linear Advance and rolled back mods to make it work)
 
