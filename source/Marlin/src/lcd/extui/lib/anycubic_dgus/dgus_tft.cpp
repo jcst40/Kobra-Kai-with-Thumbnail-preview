@@ -747,7 +747,7 @@ namespace Anycubic {
         if (strcmp_P(msg + strlen(CUSTOM_MACHINE_NAME), MARLIN_msg_ready) == 0) {
           if(probe_cnt == GRID_MAX_POINTS_X*GRID_MAX_POINTS_Y) {
             probe_cnt = 0;
-            setZOffset_mm(0.05);
+           // setZOffset_mm(0.05);
             injectCommands_P(PSTR("M500"));
             FakeChangePageOfTFT(PAGE_PreLEVEL); // this avoid a overquick UI fresh when probing done
             printer_state = AC_printer_idle;
@@ -1620,6 +1620,13 @@ namespace Anycubic {
 	  return;
 	}
 
+
+
+
+if (printer_state != AC_printer_idle && isPrinting()) {
+			  gcodeComment = "Host Printing Mode";// MEL_MOD indicate where GCODE coming from
+        ChangePageOfTFT(PAGE_STATUS2);// MEL_MOD auto change to PRINT page if printing via USB
+      }
 	flash_time = millis();
   }
 
@@ -2096,10 +2103,10 @@ namespace Anycubic {
             return ;
         }
 
-        steps = mmToWholeSteps(-0.05, Z);
+        steps = mmToWholeSteps(-BABYSTEP_MULTIPLICATOR_Z, Z);
         babystepAxis_steps(steps, Z);
 
-        z_off -= 0.01f;
+        z_off -= BABYSTEP_MULTIPLICATOR_Z;
         setZOffset_mm(z_off);
 
         sprintf(str_buf, "%.2f", getZOffset_mm());
@@ -2113,14 +2120,14 @@ namespace Anycubic {
       {
         z_off = getZOffset_mm();
 
-        if(z_off >= 5) {
-            return ;
+        if (z_off >= 5) {
+          return ;
         }
 
-        steps = mmToWholeSteps(0.05, Z);
+        steps = mmToWholeSteps(BABYSTEP_MULTIPLICATOR_Z, Z);
         babystepAxis_steps(steps, Z);
 
-        z_off += 0.01f;
+        z_off += BABYSTEP_MULTIPLICATOR_Z;
         setZOffset_mm(z_off);
 
         sprintf(str_buf, "%.2f", getZOffset_mm());
@@ -2157,8 +2164,10 @@ namespace Anycubic {
           RequestValueFromTFT(TXT_FAN_SPEED_TARGET);
 
           if(z_change) {
-            injectCommands_P(PSTR("M500"));
-            z_change = false;
+           
+						z_change = false;
+						injectCommands_P(PSTR("M500"));
+            
           }
 
           if(AC_printer_printing == printer_state) {
@@ -2762,14 +2771,15 @@ namespace Anycubic {
                     return ;
                 }
 
-                steps = mmToWholeSteps(-0.05, Z);
-                babystepAxis_steps(steps, Z);
+                steps = mmToWholeSteps(-BABYSTEP_MULTIPLICATOR_Z, Z);
+      babystepAxis_steps(steps, Z);
 
-                z_off -= 0.01f;
-                setZOffset_mm(z_off);
+      z_off -= BABYSTEP_MULTIPLICATOR_Z;
+      setZOffset_mm(z_off);
 
-                sprintf(str_buf, "%.2f", getZOffset_mm());
-                SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
+      sprintf(str_buf, "%.2f", getZOffset_mm());
+      SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
+
 
                 z_change = true;
               }
@@ -2783,14 +2793,14 @@ namespace Anycubic {
                     return ;
                 }
 
-                steps = mmToWholeSteps(0.05, Z);
-                babystepAxis_steps(steps, Z);
+                steps = mmToWholeSteps(-BABYSTEP_MULTIPLICATOR_Z, Z);
+      babystepAxis_steps(steps, Z);
 
-                z_off += 0.01f;
-                setZOffset_mm(z_off);
+      z_off -= BABYSTEP_MULTIPLICATOR_Z;
+      setZOffset_mm(z_off);
 
-                sprintf(str_buf, "%.2f", getZOffset_mm());
-                SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
+      sprintf(str_buf, "%.2f", getZOffset_mm());
+      SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
 
                 z_change = true;
               }
