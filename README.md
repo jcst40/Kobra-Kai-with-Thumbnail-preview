@@ -1,10 +1,11 @@
 //
 
-*****currently not saving zoffset****
-
-
 # Kobra-Kai-with-Thumbnail-preview
-This is basically malebuffy's Kobra Kai firmware forked to run in the Anycubic Kobra Standard with some extra features from jojos38 firmware.
+
+v1.1
+Added Zelda breath of the wild and Anycubic UI Themes
+Fixed Z-offset not being stored issue.
+
 Features:
 
 From jojos38:
@@ -33,11 +34,15 @@ From Malebuffy:
 
 -Cobra Kai UI
 
--Z offset babysteps at 0.01
-
 -M117 Enabled for comments (Layer height etc)
 
+From Wabbitguy:
 
+-Z offset babysteps at 0.01
+-Print screen when using Octoprint.
+
+
+https://github.com/wabbitguy/Kobra_Max
 
 https://github.com/jojos38/anycubic-kobra-improved-firmware
 
