@@ -4,6 +4,7 @@
 
 v1.1
 Added Zelda breath of the wild and Anycubic UI Themes
+
 Fixed Z-offset not being stored issue.
 
 Features:
