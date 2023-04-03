@@ -1,43 +1,50 @@
 //
 
 # Kobra-Kai-with-Thumbnail-preview
+
+V1.2
+
+Added Terminal menu screen to send GCODE directly from LCD (via malebuffy)
+Added new UI option Anycubic Dark Theme 
+
 ************************************************************************
 
 v1.1
-Added Zelda breath of the wild and Anycubic UI Themes
+Added new UI option Zelda breath of the wild Theme 
 
-Fixed Z-offset not being stored issue.
+Fixed Z-offset not being stored issue.(via malebuffy)
 
 *************************************************************************
 Features:
 
-From jojos38:
 
--Replace booting music with a single bip
+-Replace booting music with a single bip (via jojos38)
 
--Faster auto leveling
+-Faster auto leveling(via jojos38)
 
+-Faster homing(via jojos38)
+
+-Slightly faster printing when using default printer settings(via jojos38)
+
+-Slightly faster booting speed(via jojos38)
+
+-Reduced noise (motherboard fan)
 
 (No linear Advance and rolled back mods to make it work)
 
+-Added G-Code Preview function(via malebuffy)
 
+-Cura Post-Script (lowered resolution to 10% as 30% was making it crush)(via malebuffy)
 
-From Malebuffy:
+-Cobra Kai UI(via malebuffy)
 
--Added G-Code Preview function
+-M117 Enabled for comments (Layer height etc) ( displays in a new txt line in the print screen)(via malebuffy)
 
--Cura Post-Script (lowered resolution to 10% as 30% was making it crush)
+-Z offset babysteps at 0.01 (via wabbitguy)
 
--Cobra Kai UI
+-Automatic print screen when sending a print via Octoprint.(via wabbitguy)
 
--M117 Enabled for comments (Layer height etc)
-
-From Wabbitguy:
-
--Z offset babysteps at 0.01
--Print screen when using Octoprint.
-
-
+SOURCES:
 https://github.com/wabbitguy/Kobra_Max
 
 https://github.com/jojos38/anycubic-kobra-improved-firmware
