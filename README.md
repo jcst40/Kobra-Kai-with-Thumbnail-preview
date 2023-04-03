@@ -5,12 +5,12 @@
 V1.2
 
 Added Terminal menu screen to send GCODE directly from LCD (via malebuffy)
-Added new UI option Anycubic Dark Theme 
+Added new UI Anycubic Dark Theme 
 
 ************************************************************************
 
 v1.1
-Added new UI option Zelda breath of the wild Theme 
+
 
 Fixed Z-offset not being stored issue.(via malebuffy)
 
