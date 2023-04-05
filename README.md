@@ -76,5 +76,10 @@ Instructions for installing G-Code Thumbnail Script in Cura:
 
 -Now whenever you slice a script, a thumbnail is created in the G-Code file that the Kobra can read. Only Thumbnails with this scripts are recognised.
 
+-If you want the M117 codes to appear in your print screen such as the layer number that is currently being printed you also need to add the Display Filename And Layer on LCD post processing script:
+
+![image](https://user-images.githubusercontent.com/116078892/230057957-8d03e84e-0af9-48f9-92a9-5296f5167feb.png)
+
+
 After installing remember to do bed leveling, set Z-offset and your calibration routine. Enjoy!
 
