@@ -37,7 +37,7 @@
 
 #define DEVICE_NAME             "Anycubic Kobra Std"
 #define FIRMWARE_VER            "Kobra Kai 1.2"
-#define BUILD_VOLUME            "200*200*250 (mm)"
+#define BUILD_VOLUME            "220*220*250 (mm)"
 #define TECH_SUPPORT            "https://www.anycubic.com"
 
 /****************** PAGE INDEX***********************/
