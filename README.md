@@ -1,4 +1,7 @@
 # Kobra-Kai-with-Thumbnail-preview
+v1.3
+
+Added M600 support for filament change.
 
 V1.2
 
