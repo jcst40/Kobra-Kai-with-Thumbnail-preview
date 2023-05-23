@@ -7,7 +7,7 @@ V1.2
 
 Added Terminal menu screen to send GCODE directly from LCD (via malebuffy)
 
-Added new UI Anycubic Dark Theme and Zelda botw.
+Added new UI options: Anycubic Dark Theme and Zelda botw.
 
 ![12w1](https://user-images.githubusercontent.com/116078892/229496903-855c0a31-1407-4904-86cf-3849d1e95249.jpg)      ![121](https://user-images.githubusercontent.com/116078892/229496925-5289a7b3-b8c4-4bb4-bf88-82c9ae8b0a4f.jpg)
 
