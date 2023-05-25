@@ -20,502 +20,156 @@
  *
  */
 
-#include "../../inc/MarlinConfig.h"
+#include "../../../inc/MarlinConfig.h"
 #include "../../../MarlinCore.h"// MEL_MOD 
-#include "../gcode.h"
+#if ENABLED(ADVANCED_PAUSE_FEATURE)
 
-#include "../../module/stepper.h"
-#include "../../module/endstops.h"
+#include "../../gcode.h"
+#include "../../../feature/pause.h"
+#include "../../../module/motion.h"
+#include "../../../module/printcounter.h"
 
-#if HAS_MULTI_HOTEND
-  #include "../../module/tool_change.h"
+#if HAS_MULTI_EXTRUDER
+  #include "../../../module/tool_change.h"
 #endif
 
-#if HAS_LEVELING
-  #include "../../feature/bedlevel/bedlevel.h"
+#if HAS_LCD_MENU
+  #include "../../../lcd/marlinui.h"
 #endif
 
-#if ENABLED(SENSORLESS_HOMING)
-  #include "../../feature/tmc_util.h"
+#if ENABLED(MMU2_MENUS)
+  #include "../../../lcd/menu/menu_mmu2.h"
 #endif
 
-#include "../../module/probe.h"
-
-#if ENABLED(BLTOUCH)
-  #include "../../feature/bltouch.h"
+#if ENABLED(MIXING_EXTRUDER)
+  #include "../../../feature/mixing.h"
 #endif
 
-#include "../../lcd/marlinui.h"
-#if ENABLED(DWIN_CREALITY_LCD)
-  #include "../../lcd/dwin/e3v2/dwin.h"
+#if HAS_FILAMENT_SENSOR
+  #include "../../../feature/runout.h"
 #endif
-
-#if ENABLED(EXTENSIBLE_UI)
-  #include "../../lcd/extui/ui_api.h"
-#endif
-
-#if HAS_L64XX                         // set L6470 absolute position registers to counts
-  #include "../../libs/L64XX/L64XX_Marlin.h"
-#endif
-
-#if ENABLED(LASER_MOVE_G28_OFF)
-  #include "../../feature/spindle_laser.h"
-#endif
-
-#define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
-#include "../../core/debug_out.h"
-
-#if ENABLED(QUICK_HOME)
-
-  static void quick_home_xy() {
-
-    // Pretend the current position is 0,0
-    current_position.set(0.0, 0.0);
-    sync_plan_position();
-
-    const int x_axis_home_dir = x_home_dir(active_extruder);
-
-    const float mlx = max_length(X_AXIS),
-                mly = max_length(Y_AXIS),
-                mlratio = mlx > mly ? mly / mlx : mlx / mly,
-                fr_mm_s = _MIN(homing_feedrate(X_AXIS), homing_feedrate(Y_AXIS)) * SQRT(sq(mlratio) + 1.0);
-
-    #if ENABLED(SENSORLESS_HOMING)
-      sensorless_t stealth_states {
-          tmc_enable_stallguard(stepperX)
-        , tmc_enable_stallguard(stepperY)
-        , false
-        , false
-          #if AXIS_HAS_STALLGUARD(X2)
-            || tmc_enable_stallguard(stepperX2)
-          #endif
-        , false
-          #if AXIS_HAS_STALLGUARD(Y2)
-            || tmc_enable_stallguard(stepperY2)
-          #endif
-      };
-    #endif
-
-    do_blocking_move_to_xy(1.5 * mlx * x_axis_home_dir, 1.5 * mly * home_dir(Y_AXIS), fr_mm_s);
-
-    endstops.validate_homing_move();
-
-    current_position.set(0.0, 0.0);
-
-    #if ENABLED(SENSORLESS_HOMING)
-      tmc_disable_stallguard(stepperX, stealth_states.x);
-      tmc_disable_stallguard(stepperY, stealth_states.y);
-      #if AXIS_HAS_STALLGUARD(X2)
-        tmc_disable_stallguard(stepperX2, stealth_states.x2);
-      #endif
-      #if AXIS_HAS_STALLGUARD(Y2)
-        tmc_disable_stallguard(stepperY2, stealth_states.y2);
-      #endif
-    #endif
-  }
-
-#endif // QUICK_HOME
-
-#if ENABLED(Z_SAFE_HOMING)
-
-  inline void home_z_safely() {
-    DEBUG_SECTION(log_G28, "home_z_safely", DEBUGGING(LEVELING));
-
-    // Disallow Z homing if X or Y homing is needed
-    if (homing_needed_error(_BV(X_AXIS) | _BV(Y_AXIS))) return;
-
-    sync_plan_position();
-
-    /**
-     * Move the Z probe (or just the nozzle) to the safe homing point
-     * (Z is already at the right height)
-     */
-    constexpr xy_float_t safe_homing_xy = { Z_SAFE_HOMING_X_POINT, Z_SAFE_HOMING_Y_POINT };
-    #if HAS_HOME_OFFSET
-      xy_float_t okay_homing_xy = safe_homing_xy;
-      okay_homing_xy -= home_offset;
-    #else
-      constexpr xy_float_t okay_homing_xy = safe_homing_xy;
-    #endif
-
-    destination.set(okay_homing_xy, current_position.z);
-
-    TERN_(HOMING_Z_WITH_PROBE, destination -= probe.offset_xy);
-
-    if (position_is_reachable(destination)) {
-
-      if (DEBUGGING(LEVELING)) DEBUG_POS("home_z_safely", destination);
-
-      // Free the active extruder for movement
-      TERN_(DUAL_X_CARRIAGE, idex_set_parked(false));
-
-      TERN_(SENSORLESS_HOMING, safe_delay(500)); // Short delay needed to settle
-
-      do_blocking_move_to_xy(destination);
-      homeaxis(Z_AXIS);
-    }
-    else {
-      LCD_MESSAGEPGM(MSG_ZPROBE_OUT);
-      SERIAL_ECHO_MSG(STR_ZPROBE_OUT_SER);
-    }
-  }
-
-#endif // Z_SAFE_HOMING
-
-#if ENABLED(IMPROVE_HOMING_RELIABILITY)
-
-  slow_homing_t begin_slow_homing() {
-    slow_homing_t slow_homing{0};
-    slow_homing.acceleration.set(planner.settings.max_acceleration_mm_per_s2[X_AXIS],
-                                 planner.settings.max_acceleration_mm_per_s2[Y_AXIS]);
-    planner.settings.max_acceleration_mm_per_s2[X_AXIS] = 100;
-    planner.settings.max_acceleration_mm_per_s2[Y_AXIS] = 100;
-    #if HAS_CLASSIC_JERK
-      slow_homing.jerk_xy = planner.max_jerk;
-      planner.max_jerk.set(0, 0);
-    #endif
-    planner.reset_acceleration_rates();
-    return slow_homing;
-  }
-
-  void end_slow_homing(const slow_homing_t &slow_homing) {
-    planner.settings.max_acceleration_mm_per_s2[X_AXIS] = slow_homing.acceleration.x;
-    planner.settings.max_acceleration_mm_per_s2[Y_AXIS] = slow_homing.acceleration.y;
-    TERN_(HAS_CLASSIC_JERK, planner.max_jerk = slow_homing.jerk_xy);
-    planner.reset_acceleration_rates();
-  }
-
-#endif // IMPROVE_HOMING_RELIABILITY
 
 /**
- * G28: Home all axes according to settings
+ * M600: Pause for filament change
  *
- * Parameters
+ *  E[distance] - Retract the filament this far
+ *  Z[distance] - Move the Z axis by this distance
+ *  X[position] - Move to this X position, with Y
+ *  Y[position] - Move to this Y position, with X
+ *  U[distance] - Retract distance for removal (manual reload)
+ *  L[distance] - Extrude distance for insertion (manual reload)
+ *  B[count]    - Number of times to beep, -1 for indefinite (if equipped with a buzzer)
+ *  T[toolhead] - Select extruder for filament change
+ *  R[temp]     - Resume temperature (in current units)
  *
- *  None  Home to all axes with no parameters.
- *        With QUICK_HOME enabled XY will home together, then Z.
- *
- *  O   Home only if position is unknown
- *
- *  Rn  Raise by n mm/inches before homing
- *
- * Cartesian/SCARA parameters
- *
- *  X   Home to the X endstop
- *  Y   Home to the Y endstop
- *  Z   Home to the Z endstop
+ *  Default values are used for omitted arguments.
  */
-void GcodeSuite::G28() {
-	activeFilamentChange = false;// MEL_MOD any homing resets a filament change
-  homing_state = NOT_HOMING;
+void GcodeSuite::M600() {
+activeFilamentChange = true;// MEL_MOD set flag to show in filament change
+  #if ENABLED(MIXING_EXTRUDER)
+    const int8_t target_e_stepper = get_target_e_stepper_from_command();
+    if (target_e_stepper < 0) return;
 
-  DEBUG_SECTION(log_G28, "G28", DEBUGGING(LEVELING));
-  if (DEBUGGING(LEVELING)) log_machine_info();
+    const uint8_t old_mixing_tool = mixer.get_current_vtool();
+    mixer.T(MIXER_DIRECT_SET_TOOL);
 
-  TERN_(LASER_MOVE_G28_OFF, cutter.set_inline_enabled(false));  // turn off laser
+    MIXER_STEPPER_LOOP(i) mixer.set_collector(i, i == uint8_t(target_e_stepper) ? 1.0 : 0.0);
+    mixer.normalize();
+
+    const int8_t target_extruder = active_extruder;
+  #else
+    const int8_t target_extruder = get_target_extruder_from_command();
+    if (target_extruder < 0) return;
+  #endif
 
   #if ENABLED(DUAL_X_CARRIAGE)
-    bool IDEX_saved_duplication_state = extruder_duplication_enabled;
-    DualXMode IDEX_saved_mode = dual_x_carriage_mode;
-  #endif
-
-  #if ENABLED(MARLIN_DEV_MODE)
-    if (parser.seen('S')) {
-      LOOP_XYZ(a) set_axis_is_at_home((AxisEnum)a);
-      sync_plan_position();
-      SERIAL_ECHOLNPGM("Simulated Homing");
-      report_current_position();
-      return;
-    }
-  #endif
-
-  // Home (O)nly if position is unknown
-  if (!axes_should_home() && parser.boolval('O')) {
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("> homing not needed, skip");
-    return;
-  }
-
-  TERN_(DWIN_CREALITY_LCD, DWIN_StartHoming());
-  TERN_(EXTENSIBLE_UI, ExtUI::onHomingStart());
-
-  planner.synchronize();          // Wait for planner moves to finish!
-
-  SET_SOFT_ENDSTOP_LOOSE(false);  // Reset a leftover 'loose' motion state
-
-  // Disable the leveling matrix before homing
-  #if HAS_LEVELING
-    const bool leveling_restore_state = parser.boolval('L', TERN(RESTORE_LEVELING_AFTER_G28, planner.leveling_active, ENABLED(ENABLE_LEVELING_AFTER_G28)));
-    IF_ENABLED(PROBE_MANUALLY, g29_in_progress = false); // Cancel the active G29 session
-    set_bed_leveling_enabled(false);
-  #endif
-
-  // Reset to the XY plane
-  TERN_(CNC_WORKSPACE_PLANES, workspace_plane = PLANE_XY);
-
-  // Count this command as movement / activity
-  reset_stepper_timeout();
-
-  #define HAS_CURRENT_HOME(N) (defined(N##_CURRENT_HOME) && N##_CURRENT_HOME != N##_CURRENT)
-  #if HAS_CURRENT_HOME(X) || HAS_CURRENT_HOME(X2) || HAS_CURRENT_HOME(Y) || HAS_CURRENT_HOME(Y2)
-    #define HAS_HOMING_CURRENT 1
-  #endif
-
-  #if HAS_HOMING_CURRENT
-    auto debug_current = [](PGM_P const s, const int16_t a, const int16_t b){
-      serialprintPGM(s); DEBUG_ECHOLNPAIR(" current: ", a, " -> ", b);
-    };
-    #if HAS_CURRENT_HOME(X)
-      const int16_t tmc_save_current_X = stepperX.getMilliamps();
-      stepperX.rms_current(X_CURRENT_HOME);
-      if (DEBUGGING(LEVELING)) debug_current(PSTR("X"), tmc_save_current_X, X_CURRENT_HOME);
-    #endif
-    #if HAS_CURRENT_HOME(X2)
-      const int16_t tmc_save_current_X2 = stepperX2.getMilliamps();
-      stepperX2.rms_current(X2_CURRENT_HOME);
-      if (DEBUGGING(LEVELING)) debug_current(PSTR("X2"), tmc_save_current_X2, X2_CURRENT_HOME);
-    #endif
-    #if HAS_CURRENT_HOME(Y)
-      const int16_t tmc_save_current_Y = stepperY.getMilliamps();
-      stepperY.rms_current(Y_CURRENT_HOME);
-      if (DEBUGGING(LEVELING)) debug_current(PSTR("Y"), tmc_save_current_Y, Y_CURRENT_HOME);
-    #endif
-    #if HAS_CURRENT_HOME(Y2)
-      const int16_t tmc_save_current_Y2 = stepperY2.getMilliamps();
-      stepperY2.rms_current(Y2_CURRENT_HOME);
-      if (DEBUGGING(LEVELING)) debug_current(PSTR("Y2"), tmc_save_current_Y2, Y2_CURRENT_HOME);
-    #endif
-  #endif
-
-  TERN_(IMPROVE_HOMING_RELIABILITY, slow_homing_t slow_homing = begin_slow_homing());
-
-  // Always home with tool 0 active
-  #if HAS_MULTI_HOTEND
-    #if DISABLED(DELTA) || ENABLED(DELTA_HOME_TO_SAFE_ZONE)
-      const uint8_t old_tool_index = active_extruder;
-    #endif
-    // PARKING_EXTRUDER homing requires different handling of movement / solenoid activation, depending on the side of homing
-    #if ENABLED(PARKING_EXTRUDER)
-      const bool pe_final_change_must_unpark = parking_extruder_unpark_after_homing(old_tool_index, X_HOME_DIR + 1 == old_tool_index * 2);
-    #endif
-    tool_change(0, true);
-  #endif
-
-  TERN_(HAS_DUPLICATION_MODE, set_duplication_enabled(false));
-
-  remember_feedrate_scaling_off();
-
-  endstops.enable(true); // Enable endstops for next homing move
-
-  #if ENABLED(DELTA)
-
-    constexpr bool doZ = true; // for NANODLP_Z_SYNC if your DLP is on a DELTA
-
-    home_delta();
-
-    TERN_(IMPROVE_HOMING_RELIABILITY, end_slow_homing(slow_homing));
-
-  #else // NOT DELTA
-
-    const bool homeZ = parser.seen('Z'),
-               needX = homeZ && TERN0(Z_SAFE_HOMING, axes_should_home(_BV(X_AXIS))),
-               needY = homeZ && TERN0(Z_SAFE_HOMING, axes_should_home(_BV(Y_AXIS))),
-               homeX = needX || parser.seen('X'), homeY = needY || parser.seen('Y'),
-               home_all = homeX == homeY && homeX == homeZ, // All or None
-               doX = home_all || homeX, doY = home_all || homeY, doZ = home_all || homeZ;
-
-    #if ENABLED(HOME_Z_FIRST)
-
-      if (doZ) homeaxis(Z_AXIS);
-
-    #endif
-
-    const float z_homing_height = TERN1(UNKNOWN_Z_NO_RAISE, axis_is_trusted(Z_AXIS))
-                                  ? (parser.seenval('R') ? parser.value_linear_units() : Z_HOMING_HEIGHT)
-                                  : 0;
-
-    if (z_homing_height && (doX || doY || TERN0(Z_SAFE_HOMING, doZ))) {
-      // Raise Z before homing any other axes and z is not already high enough (never lower z)
-      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("Raise Z (before homing) by ", z_homing_height);
-      do_z_clearance(z_homing_height, axis_is_trusted(Z_AXIS), DISABLED(UNKNOWN_Z_NO_RAISE));
-    }
-
-    #if ENABLED(QUICK_HOME)
-
-      if (doX && doY) quick_home_xy();
-
-    #endif
-
-    // Home Y (before X)
-    if (ENABLED(HOME_Y_BEFORE_X) && (doY || TERN0(CODEPENDENT_XY_HOMING, doX)))
-      homeaxis(Y_AXIS);
-
-    // Home X
-    if (doX || (doY && ENABLED(CODEPENDENT_XY_HOMING) && DISABLED(HOME_Y_BEFORE_X))) {
-
-      #if ENABLED(DUAL_X_CARRIAGE)
-
-        // Always home the 2nd (right) extruder first
-        active_extruder = 1;
-        homeaxis(X_AXIS);
-
-        // Remember this extruder's position for later tool change
-        inactive_extruder_x = current_position.x;
-
-        // Home the 1st (left) extruder
-        active_extruder = 0;
-        homeaxis(X_AXIS);
-
-        // Consider the active extruder to be in its "parked" position
-        idex_set_parked();
-
+    int8_t DXC_ext = target_extruder;
+    if (!parser.seen('T')) {  // If no tool index is specified, M600 was (probably) sent in response to filament runout.
+                              // In this case, for duplicating modes set DXC_ext to the extruder that ran out.
+      #if HAS_FILAMENT_SENSOR && NUM_RUNOUT_SENSORS > 1
+        if (idex_is_duplicating())
+          DXC_ext = (READ(FIL_RUNOUT2_PIN) == FIL_RUNOUT2_STATE) ? 1 : 0;
       #else
-
-        homing_state = HOMING_X;
-        homeaxis(X_AXIS);
-        if(HOMING_FAILED_X == homing_state) {
-          return ;
-        }
-
+        DXC_ext = active_extruder;
       #endif
     }
+  #endif
 
-    // Home Y (after X)
-    if (DISABLED(HOME_Y_BEFORE_X) && doY) {
-      if(HOMING_FAILED_X != homing_state) {
-        homing_state = HOMING_Y;
-        homeaxis(Y_AXIS);
-        if(HOMING_FAILED_Y == homing_state) {
-          return ;
-        }
-      } else {
-        return ;
-      }
-    }
-    
-    TERN_(IMPROVE_HOMING_RELIABILITY, end_slow_homing(slow_homing));
+  // Show initial "wait for start" message
+  #if HAS_LCD_MENU && DISABLED(MMU2_MENUS)
+    lcd_pause_show_message(PAUSE_MESSAGE_CHANGING, PAUSE_MODE_PAUSE_PRINT, target_extruder);
+  #endif
 
-    // Home Z last if homing towards the bed
-    #if DISABLED(HOME_Z_FIRST)
-      if (doZ) {
-        #if EITHER(Z_MULTI_ENDSTOPS, Z_STEPPER_AUTO_ALIGN)
-          stepper.set_all_z_lock(false);
-          stepper.set_separate_multi_axis(false);
-        #endif
+  #if ENABLED(HOME_BEFORE_FILAMENT_CHANGE)
+    // If needed, home before parking for filament change
+    if (!all_axes_trusted()) home_all_axes(true);
+  #endif
 
-        TERN_(BLTOUCH, bltouch.init());
-//        TERN(Z_SAFE_HOMING, home_z_safely(), homeaxis(Z_AXIS));
-    #if ENABLED(Z_SAFE_HOMING)
-        home_z_safely();
+  #if HAS_MULTI_EXTRUDER
+    // Change toolhead if specified
+    const uint8_t active_extruder_before_filament_change = active_extruder;
+    if (active_extruder != target_extruder && TERN1(DUAL_X_CARRIAGE, !idex_is_duplicating()))
+      tool_change(target_extruder, false);
+  #endif
+
+  // Initial retract before move to filament change position
+  const float retract = -ABS(parser.seen('E') ? parser.value_axis_units(E_AXIS) : (PAUSE_PARK_RETRACT_LENGTH));
+
+  xyz_pos_t park_point=NOZZLE_PARK_POINT;
+
+  // Lift Z axis
+  if (parser.seenval('Z')) park_point.z = parser.linearval('Z');
+
+  // Move XY axes to filament change position or given position
+  if (parser.seenval('X')) park_point.x = parser.linearval('X');
+  if (parser.seenval('Y')) park_point.y = parser.linearval('Y');
+
+  #if HAS_HOTEND_OFFSET && NONE(DUAL_X_CARRIAGE, DELTA)
+    park_point += hotend_offset[active_extruder];
+  #endif
+
+  #if ENABLED(MMU2_MENUS)
+    // For MMU2 reset retract and load/unload values so they don't mess with MMU filament handling
+    constexpr float unload_length = 0.5f,
+                    slow_load_length = 0.0f,
+                    fast_load_length = 0.0f;
+  #else
+    // Unload filament
+    const float unload_length = -ABS(parser.seen('U') ? parser.value_axis_units(E_AXIS)
+                                                      : fc_settings[active_extruder].unload_length);
+
+    // Slow load filament
+    constexpr float slow_load_length = FILAMENT_CHANGE_SLOW_LOAD_LENGTH;
+
+    // Fast load filament
+    const float fast_load_length = ABS(parser.seen('L') ? parser.value_axis_units(E_AXIS)
+                                                        : fc_settings[active_extruder].load_length);
+  #endif
+
+  const int beep_count = parser.intval('B', -1
+    #ifdef FILAMENT_CHANGE_ALERT_BEEPS
+      + 1 + FILAMENT_CHANGE_ALERT_BEEPS
+    #endif
+  );
+
+  if (pause_print(retract, park_point, unload_length, true DXC_PASS)) {
+    #if ENABLED(MMU2_MENUS)
+      mmu2_M600();
+      resume_print(slow_load_length, fast_load_length, 0, beep_count DXC_PASS);
     #else
-        if(HOMING_FAILED_X != homing_state && HOMING_FAILED_Y != homing_state) {
-          homing_state = HOMING_Z;
-          homeaxis(Z_AXIS);
-          if(HOMING_FAILED_Z == homing_state) {
-            return ;
-          }
-        } else {
-          return ;
-        }
+      wait_for_confirmation(true, beep_count DXC_PASS);
+      resume_print(slow_load_length, fast_load_length, ADVANCED_PAUSE_PURGE_LENGTH,
+                   beep_count, (parser.seenval('R') ? parser.value_celsius() : 0) DXC_PASS);
     #endif
-        probe.move_z_after_homing();
-      }
-    #endif
+  }
 
-    sync_plan_position();
-
-  #endif // !DELTA (G28)
-
-  /**
-   * Preserve DXC mode across a G28 for IDEX printers in DXC_DUPLICATION_MODE.
-   * This is important because it lets a user use the LCD Panel to set an IDEX Duplication mode, and
-   * then print a standard GCode file that contains a single print that does a G28 and has no other
-   * IDEX specific commands in it.
-   */
-  #if ENABLED(DUAL_X_CARRIAGE)
-
-    if (idex_is_duplicating()) {
-
-      TERN_(IMPROVE_HOMING_RELIABILITY, slow_homing = begin_slow_homing());
-
-      // Always home the 2nd (right) extruder first
-      active_extruder = 1;
-      homeaxis(X_AXIS);
-
-      // Remember this extruder's position for later tool change
-      inactive_extruder_x = current_position.x;
-
-      // Home the 1st (left) extruder
-      active_extruder = 0;
-      homeaxis(X_AXIS);
-
-      // Consider the active extruder to be parked
-      idex_set_parked();
-
-      dual_x_carriage_mode = IDEX_saved_mode;
-      set_duplication_enabled(IDEX_saved_duplication_state);
-
-      TERN_(IMPROVE_HOMING_RELIABILITY, end_slow_homing(slow_homing));
-    }
-
-  #endif // DUAL_X_CARRIAGE
-
-  endstops.not_homing();
-
-  // Clear endstop state for polled stallGuard endstops
-  TERN_(SPI_ENDSTOPS, endstops.clear_endstop_state());
-
-  #if BOTH(DELTA, DELTA_HOME_TO_SAFE_ZONE)
-    // move to a height where we can use the full xy-area
-    do_blocking_move_to_z(delta_clip_start_height);
+  #if HAS_MULTI_EXTRUDER
+    // Restore toolhead if it was changed
+    if (active_extruder_before_filament_change != active_extruder)
+      tool_change(active_extruder_before_filament_change, false);
   #endif
 
-  TERN_(HAS_LEVELING, set_bed_leveling_enabled(leveling_restore_state));
-
-  restore_feedrate_and_scaling();
-
-  // Restore the active tool after homing
-  #if HAS_MULTI_HOTEND && (DISABLED(DELTA) || ENABLED(DELTA_HOME_TO_SAFE_ZONE))
-    tool_change(old_tool_index, TERN(PARKING_EXTRUDER, !pe_final_change_must_unpark, DISABLED(DUAL_X_CARRIAGE)));   // Do move if one of these
-  #endif
-
-  #if HAS_HOMING_CURRENT
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Restore driver current...");
-    #if HAS_CURRENT_HOME(X)
-      stepperX.rms_current(tmc_save_current_X);
-    #endif
-    #if HAS_CURRENT_HOME(X2)
-      stepperX2.rms_current(tmc_save_current_X2);
-    #endif
-    #if HAS_CURRENT_HOME(Y)
-      stepperY.rms_current(tmc_save_current_Y);
-    #endif
-    #if HAS_CURRENT_HOME(Y2)
-      stepperY2.rms_current(tmc_save_current_Y2);
-    #endif
-  #endif
-
-  ui.refresh();
-
-  TERN_(DWIN_CREALITY_LCD, DWIN_CompletedHoming());
-  TERN_(EXTENSIBLE_UI, ExtUI::onHomingComplete());
-
-  report_current_position();
-
-  if (ENABLED(NANODLP_Z_SYNC) && (doZ || ENABLED(NANODLP_ALL_AXIS)))
-    SERIAL_ECHOLNPGM(STR_Z_MOVE_COMP);
-
-  #if HAS_L64XX
-    // Set L6470 absolute position registers to counts
-    // constexpr *might* move this to PROGMEM.
-    // If not, this will need a PROGMEM directive and an accessor.
-    static constexpr AxisEnum L64XX_axis_xref[MAX_L64XX] = {
-      X_AXIS, Y_AXIS, Z_AXIS,
-      X_AXIS, Y_AXIS, Z_AXIS, Z_AXIS,
-      E_AXIS, E_AXIS, E_AXIS, E_AXIS, E_AXIS, E_AXIS
-    };
-    for (uint8_t j = 1; j <= L64XX::chain[0]; j++) {
-      const uint8_t cv = L64XX::chain[j];
-      L64xxManager.set_param((L64XX_axis_t)cv, L6470_ABS_POS, stepper.position(L64XX_axis_xref[cv]));
-    }
-  #endif
+  TERN_(MIXING_EXTRUDER, mixer.T(old_mixing_tool)); // Restore original mixing tool
 }
+
+#endif // ADVANCED_PAUSE_FEATURE
