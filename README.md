@@ -1,5 +1,6 @@
 # Kobra-Kai-with-Thumbnail-preview
-The firmware was initially created to be compatible with Anycubic's original Tri-Gorilla_ProA V1.0.4 motherboard and a DWIN LCD. However, Anycubic has made adjustments to their manufacturing process and some Kobra printers now come with the Tri-Gorilla_ProB V1.0.2 motherboard instead and a TJC screen. 
+The firmware was created to be compatible with Anycubic's original Tri-Gorilla_ProA V1.0.4 motherboard and a DWIN LCD. 
+Anycubic has made adjustments to their manufacturing process and some Kobra printers now come with the Tri-Gorilla_ProB V1.0.2 motherboard and a TJC screen. 
 These are NOT compatible with this firmware.
 
 v1.3
